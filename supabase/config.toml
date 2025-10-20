@@ -1,1 +1,7 @@
 project_id = "hlxtepntckhdfmbhyxug"
+
+[functions.fetch-fyers-data]
+verify_jwt = false
+
+[functions.get-market-data]
+verify_jwt = false

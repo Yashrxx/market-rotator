@@ -14,7 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      market_data: {
+        Row: {
+          change: number
+          created_at: string
+          fetched_at: string
+          id: string
+          industry: string
+          name: string
+          price: number
+          rs_momentum: number
+          rs_ratio: number
+          sector: string
+          symbol: string
+        }
+        Insert: {
+          change: number
+          created_at?: string
+          fetched_at?: string
+          id?: string
+          industry: string
+          name: string
+          price: number
+          rs_momentum: number
+          rs_ratio: number
+          sector: string
+          symbol: string
+        }
+        Update: {
+          change?: number
+          created_at?: string
+          fetched_at?: string
+          id?: string
+          industry?: string
+          name?: string
+          price?: number
+          rs_momentum?: number
+          rs_ratio?: number
+          sector?: string
+          symbol?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
