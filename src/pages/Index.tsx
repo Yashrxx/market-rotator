@@ -1,8 +1,9 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { ControlBar } from "@/components/ControlBar";
 import { RRGChartZoomable, RRGChartRef } from "@/components/RRGChartZoomable";
 import { StockTable } from "@/components/StockTable";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 interface StockData {
   symbol: string;
@@ -36,25 +37,58 @@ const Index = () => {
   const [tailLength, setTailLength] = useState(10);
   const chartRef = useRef<RRGChartRef>(null);
 
-  const handleFetchData = () => {
-    setIsLoading(true);
-    toast.info("Fetching latest market data...");
-    
-    // Simulate API call
-    setTimeout(() => {
-      // Generate slightly randomized data to simulate updates
-      const newData = data.map(item => ({
-        ...item,
-        "RS-Ratio": item["RS-Ratio"] + (Math.random() - 0.5) * 2,
-        "RS-Momentum": item["RS-Momentum"] + (Math.random() - 0.5) * 2,
-        change: item.change + (Math.random() - 0.5) * 0.5,
-        price: item.price + (Math.random() - 0.5) * 10,
-      }));
+  // Fetch initial data on component mount
+  useEffect(() => {
+    fetchMarketData();
+  }, []);
+
+  const fetchMarketData = async () => {
+    try {
+      const { data: marketData, error } = await supabase.functions.invoke('get-market-data');
       
-      setData(newData);
+      if (error) {
+        console.error('Error fetching market data:', error);
+        toast.error("Failed to fetch market data. Using placeholder data.");
+        return;
+      }
+
+      if (marketData && Array.isArray(marketData) && marketData.length > 0) {
+        setData(marketData);
+        toast.success("Market data loaded successfully!");
+      } else {
+        toast.info("No market data available. Using placeholder data.");
+      }
+    } catch (error) {
+      console.error('Error fetching market data:', error);
+      toast.error("Failed to fetch market data. Using placeholder data.");
+    }
+  };
+
+  const handleFetchData = async () => {
+    setIsLoading(true);
+    toast.info("Fetching latest market data from FYERS...");
+    
+    try {
+      // Trigger the fetch-fyers-data function to get fresh data
+      const { error: fetchError } = await supabase.functions.invoke('fetch-fyers-data');
+      
+      if (fetchError) {
+        console.error('Error triggering data fetch:', fetchError);
+        toast.error("Failed to fetch fresh data from FYERS.");
+        setIsLoading(false);
+        return;
+      }
+
+      // Wait a moment for the data to be stored, then fetch the updated data
+      setTimeout(async () => {
+        await fetchMarketData();
+        setIsLoading(false);
+      }, 2000);
+    } catch (error) {
+      console.error('Error in handleFetchData:', error);
+      toast.error("An error occurred while fetching data.");
       setIsLoading(false);
-      toast.success("Data updated successfully!");
-    }, 1500);
+    }
   };
 
   const handleVisibilityToggle = (symbol: string) => {
