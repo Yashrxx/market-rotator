@@ -1,5 +1,8 @@
-import { useState, useRef, useImperativeHandle, forwardRef } from "react";
+import { useState, useRef, useImperativeHandle, forwardRef, useEffect } from "react";
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, Cell } from "recharts";
+import { Slider } from "@/components/ui/slider";
+import { Button } from "@/components/ui/button";
+import { Play, Pause } from "lucide-react";
 
 interface DataPoint {
   symbol: string;
@@ -57,9 +60,28 @@ export const RRGChartZoomable = forwardRef<RRGChartRef, RRGChartZoomableProps>((
   const [domain, setDomain] = useState(defaultDomain);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [timePosition, setTimePosition] = useState(100);
+  const [isPlaying, setIsPlaying] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
 
   const visibleData = data.filter(item => item.visible !== false);
+
+  // Animation effect
+  useEffect(() => {
+    if (!isPlaying) return;
+    
+    const interval = setInterval(() => {
+      setTimePosition(prev => {
+        if (prev >= 100) {
+          setIsPlaying(false);
+          return 100;
+        }
+        return prev + 2;
+      });
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [isPlaying]);
 
   const resetView = () => {
     setDomain(defaultDomain);
@@ -160,8 +182,8 @@ export const RRGChartZoomable = forwardRef<RRGChartRef, RRGChartZoomableProps>((
             type="number"
             dataKey="RS-Momentum"
             domain={domain.y}
-            tickFormatter={(value) => value.toFixed(2)} // <-- enforce 2 decimal places
-            label={{ value: "RS-Momentum", angle: -90, position: "insideLeft", fill: "hsl(var(--chart-axis))" }}
+            tickFormatter={(value) => value.toFixed(2)}
+            label={{ value: "RS-Momentum", angle: -90, position: "insideLeft", offset: 10, fill: "hsl(var(--chart-axis))" }}
             stroke="hsl(var(--chart-axis))"
             tick={{ fill: "hsl(var(--chart-axis))" }}
           />
@@ -170,10 +192,10 @@ export const RRGChartZoomable = forwardRef<RRGChartRef, RRGChartZoomableProps>((
           <ReferenceLine x={100} stroke="hsl(var(--foreground))" strokeWidth={2} opacity={0.5} />
           <ReferenceLine y={100} stroke="hsl(var(--foreground))" strokeWidth={2} opacity={0.5} />
 
-          <ReferenceArea x1={100} y1={100} x2={domain.x[1]} y2={domain.y[1]} fill="rgba(0,255,0,0.1)" /> {/* Leading */}
-          <ReferenceArea x1={100} y1={domain.y[0]} x2={domain.x[1]} y2={100} fill="rgba(255,255,0,0.1)" /> {/* Weakening */}
-          <ReferenceArea x1={domain.x[0]} y1={domain.y[0]} x2={100} y2={100} fill="rgba(255,0,0,0.1)" /> {/* Lagging */}
-          <ReferenceArea x1={domain.x[0]} y1={100} x2={100} y2={domain.y[1]} fill="rgba(0,0,255,0.1)" /> {/* Improving */}
+          <ReferenceArea x1={100} y1={100} x2={domain.x[1]} y2={domain.y[1]} fill="hsl(var(--quadrant-leading) / 0.15)" />
+          <ReferenceArea x1={100} y1={domain.y[0]} x2={domain.x[1]} y2={100} fill="hsl(var(--quadrant-weakening) / 0.15)" />
+          <ReferenceArea x1={domain.x[0]} y1={domain.y[0]} x2={100} y2={100} fill="hsl(var(--quadrant-lagging) / 0.15)" />
+          <ReferenceArea x1={domain.x[0]} y1={100} x2={100} y2={domain.y[1]} fill="hsl(var(--quadrant-improving) / 0.15)" />
 
 
           <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: "3 3" }} />
@@ -195,7 +217,21 @@ export const RRGChartZoomable = forwardRef<RRGChartRef, RRGChartZoomableProps>((
         </ScatterChart>
       </ResponsiveContainer>
 
-      {/* Quadrant Labels */}
+      {/* Fixed Quadrant Background Titles */}
+      <div className="absolute top-[15%] right-[15%] text-2xl font-bold opacity-20 pointer-events-none" style={{ color: "hsl(var(--quadrant-leading))" }}>
+        Leading
+      </div>
+      <div className="absolute bottom-[25%] right-[15%] text-2xl font-bold opacity-20 pointer-events-none" style={{ color: "hsl(var(--quadrant-weakening))" }}>
+        Weakening
+      </div>
+      <div className="absolute bottom-[25%] left-[20%] text-2xl font-bold opacity-20 pointer-events-none" style={{ color: "hsl(var(--quadrant-lagging))" }}>
+        Lagging
+      </div>
+      <div className="absolute top-[15%] left-[20%] text-2xl font-bold opacity-20 pointer-events-none" style={{ color: "hsl(var(--quadrant-improving))" }}>
+        Improving
+      </div>
+
+      {/* Quadrant Legend */}
       <div className="absolute top-8 right-8 bg-card/80 backdrop-blur-sm border border-border rounded-lg p-3 text-xs">
         <div className="flex items-center gap-2 mb-1.5">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: "hsl(var(--quadrant-leading))" }} />
@@ -215,8 +251,35 @@ export const RRGChartZoomable = forwardRef<RRGChartRef, RRGChartZoomableProps>((
         </div>
       </div>
 
-      <div className="absolute bottom-8 left-8 text-xs text-muted-foreground">
-        Ctrl/Cmd + Scroll to zoom • Drag to pan • Tail length: {tailLength}
+      {/* Time Trail Animation Control */}
+      <div className="absolute bottom-8 left-8 right-8 bg-card/80 backdrop-blur-sm border border-border rounded-lg p-3">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setIsPlaying(!isPlaying)}
+            className="h-8 w-8 shrink-0"
+          >
+            {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+          </Button>
+          <Slider
+            value={[timePosition]}
+            onValueChange={(values) => {
+              setTimePosition(values[0]);
+              setIsPlaying(false);
+            }}
+            min={0}
+            max={100}
+            step={1}
+            className="flex-1"
+          />
+          <span className="text-xs text-muted-foreground whitespace-nowrap min-w-[60px]">
+            {timePosition}% Trail
+          </span>
+        </div>
+        <div className="text-xs text-muted-foreground mt-2 text-center">
+          Ctrl/Cmd + Scroll to zoom • Drag to pan
+        </div>
       </div>
     </div>
   );

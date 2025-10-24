@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
@@ -27,6 +28,7 @@ export const ControlBar = ({
   onCenterGraph,
 }: ControlBarProps) => {
   const { theme, setTheme } = useTheme();
+  const [inputValue, setInputValue] = useState(tailLength.toString());
 
   return (
     <div className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
@@ -57,7 +59,10 @@ export const ControlBar = ({
             <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Tail Length:</span>
             <Slider
               value={[tailLength]}
-              onValueChange={(values) => onTailLengthChange(values[0])}
+              onValueChange={(values) => {
+                onTailLengthChange(values[0]);
+                setInputValue(values[0].toString());
+              }}
               min={3}
               max={20}
               step={1}
@@ -65,21 +70,20 @@ export const ControlBar = ({
             />
             <Input
               type="number"
-              value={tailLength}
+              value={inputValue}
               onChange={(e) => {
+                setInputValue(e.target.value);
                 const val = parseInt(e.target.value);
                 if (!isNaN(val) && val >= 3 && val <= 20) {
                   onTailLengthChange(val);
-                } else if (e.target.value === '') {
-                  // Allow clearing the input
-                  return;
                 }
               }}
-              onBlur={(e) => {
-                // Reset to current value if invalid on blur
-                const val = parseInt(e.target.value);
+              onBlur={() => {
+                const val = parseInt(inputValue);
                 if (isNaN(val) || val < 3 || val > 20) {
-                  e.target.value = tailLength.toString();
+                  setInputValue(tailLength.toString());
+                } else {
+                  onTailLengthChange(val);
                 }
               }}
               min={3}
