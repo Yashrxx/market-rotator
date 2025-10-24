@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
 import { RefreshCw, Sun, Moon, Target } from "lucide-react";
 import { useTheme } from "next-themes";
 
@@ -62,9 +63,19 @@ export const ControlBar = ({
               step={1}
               className="w-32"
             />
-            <span className="text-sm font-medium text-foreground w-8 text-center">
-              {tailLength}
-            </span>
+            <Input
+              type="number"
+              value={tailLength}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                if (!isNaN(val) && val >= 3 && val <= 20) {
+                  onTailLengthChange(val);
+                }
+              }}
+              min={3}
+              max={20}
+              className="w-16 h-9 text-center"
+            />
           </div>
         </div>
 
