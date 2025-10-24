@@ -74,7 +74,7 @@ export const ControlBar = ({
               }}
               min={3}
               max={20}
-              className="w-16 h-9 text-center"
+              className="w-12 h-9 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
           </div>
         </div>
