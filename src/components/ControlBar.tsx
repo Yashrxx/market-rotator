@@ -70,11 +70,21 @@ export const ControlBar = ({
                 const val = parseInt(e.target.value);
                 if (!isNaN(val) && val >= 3 && val <= 20) {
                   onTailLengthChange(val);
+                } else if (e.target.value === '') {
+                  // Allow clearing the input
+                  return;
+                }
+              }}
+              onBlur={(e) => {
+                // Reset to current value if invalid on blur
+                const val = parseInt(e.target.value);
+                if (isNaN(val) || val < 3 || val > 20) {
+                  e.target.value = tailLength.toString();
                 }
               }}
               min={3}
               max={20}
-              className="w-12 h-9 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              className="w-14 h-9 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
           </div>
         </div>

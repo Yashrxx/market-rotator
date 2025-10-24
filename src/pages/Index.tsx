@@ -128,7 +128,7 @@ const Index = () => {
 
       <main className="flex-1 p-6 space-y-6">
         <div className="w-full flex justify-center">
-          <div className="w-full max-w-[1000px] aspect-square relative">
+          <div className="w-full max-w-[1200px] h-[700px] relative">
             <RRGChartZoomable ref={chartRef} data={data} tailLength={tailLength} />
           </div>
         </div>
