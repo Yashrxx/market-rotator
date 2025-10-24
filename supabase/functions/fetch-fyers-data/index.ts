@@ -99,41 +99,14 @@ Deno.serve(async (req) => {
   try {
     console.log('Fetching FYERS data...');
 
-    const FYERS_APP_ID = Deno.env.get('FYERS_APP_ID');
-    const FYERS_SECRET_KEY = Deno.env.get('FYERS_SECRET_KEY');
+    // Get the access token from environment
+    const accessToken = Deno.env.get('FYERS_ACCESS_TOKEN');
 
-    if (!FYERS_APP_ID || !FYERS_SECRET_KEY) {
-      throw new Error('FYERS credentials not configured');
+    if (!accessToken) {
+      throw new Error('FYERS_ACCESS_TOKEN not configured. Please add your FYERS access token in the secrets.');
     }
 
-    // Generate access token using FYERS API
-    // Note: In production, you should implement proper OAuth2 flow
-    // For now, we'll use a simplified approach
-    const authResponse = await fetch('https://api-t1.fyers.in/api/v3/generate-authcode', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        client_id: FYERS_APP_ID,
-        secret_key: FYERS_SECRET_KEY,
-        response_type: 'code',
-        state: 'sample_state'
-      })
-    });
-
-    if (!authResponse.ok) {
-      const errorText = await authResponse.text();
-      console.error('FYERS auth failed:', errorText);
-      throw new Error(`FYERS authentication failed: ${errorText}`);
-    }
-
-    const authData = await authResponse.json();
-    console.log('FYERS auth response:', JSON.stringify(authData));
-
-    // For now, we'll use a placeholder token since full OAuth flow requires user interaction
-    // In production, you need to implement the complete OAuth2 flow
-    const accessToken = `${FYERS_APP_ID}:${FYERS_SECRET_KEY}`;
+    console.log('Using FYERS access token...');
 
     const marketData = await fetchFYERSData(accessToken);
 
