@@ -161,7 +161,7 @@ export const RRGChartZoomable = forwardRef<RRGChartRef, RRGChartZoomableProps>((
             dataKey="RS-Momentum"
             domain={domain.y}
             tickFormatter={(value) => value.toFixed(2)}
-            label={{ value: "RS-Momentum", angle: -90, position: "insideLeft", offset: 0, fill: "hsl(var(--chart-axis))" }}
+            label={{ value: "RS-Momentum", angle: -90, position: "insideLeft", offset: -20, fill: "hsl(var(--chart-axis))" }}
             stroke="hsl(var(--chart-axis))"
             tick={{ fill: "hsl(var(--chart-axis))" }}
           />
