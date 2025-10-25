@@ -27,6 +27,89 @@ function calculateRSMetrics(price: number, change: number, benchmarkPrice: numbe
   };
 }
 
+async function getValidAccessToken(): Promise<string> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  // Check if we have a valid token in database
+  const { data: tokenData, error } = await supabase
+    .from('fyers_tokens')
+    .select('*')
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error fetching token:', error);
+  }
+
+  // If we have a valid token, return it
+  if (tokenData?.access_token) {
+    console.log('Using cached token, expires at:', tokenData.expires_at);
+    return tokenData.access_token;
+  }
+
+  // Otherwise, refresh token
+  console.log('No valid cached token, refreshing...');
+  return await refreshFyersToken();
+}
+
+async function refreshFyersToken(): Promise<string> {
+  const appId = Deno.env.get('FYERS_APP_ID');
+  const secretKey = Deno.env.get('FYERS_SECRET_KEY');
+  const refreshToken = Deno.env.get('FYERS_REFRESH_TOKEN');
+
+  if (!appId || !secretKey || !refreshToken) {
+    throw new Error('Missing Fyers credentials');
+  }
+
+  console.log('Refreshing Fyers access token...');
+
+  const response = await fetch('https://api-t1.fyers.in/api/v3/validate-refresh-token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      grant_type: 'refresh_token',
+      appIdHash: appId,
+      refresh_token: refreshToken,
+      pin: secretKey,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Failed to refresh Fyers token:', errorText);
+    throw new Error(`Failed to refresh token: ${errorText}`);
+  }
+
+  const data = await response.json();
+  const accessToken = data.access_token;
+
+  if (!accessToken) {
+    throw new Error('No access token in response');
+  }
+
+  // Store the new token
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  const expiresAt = new Date(Date.now() + 86400 * 1000); // 24 hours
+
+  await supabase.from('fyers_tokens').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  await supabase.from('fyers_tokens').insert({
+    access_token: accessToken,
+    expires_at: expiresAt.toISOString(),
+  });
+
+  console.log('Token refreshed and stored successfully');
+  return accessToken;
+}
+
 async function fetchFYERSData(accessToken: string) {
   // Define symbols to fetch
   const symbols = [
@@ -97,16 +180,10 @@ Deno.serve(async (req) => {
   }
 
   try {
-    console.log('Fetching FYERS data...');
+    console.log('Fetching FYERS data with automatic token refresh...');
 
-    // Get the access token from environment
-    const accessToken = Deno.env.get('FYERS_ACCESS_TOKEN');
-
-    if (!accessToken) {
-      throw new Error('FYERS_ACCESS_TOKEN not configured. Please add your FYERS access token in the secrets.');
-    }
-
-    console.log('Using FYERS access token...');
+    // Get valid access token (will auto-refresh if needed)
+    const accessToken = await getValidAccessToken();
 
     const marketData = await fetchFYERSData(accessToken);
 
