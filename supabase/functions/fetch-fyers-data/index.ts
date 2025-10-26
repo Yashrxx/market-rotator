@@ -61,7 +61,13 @@ async function getValidAccessToken(): Promise<string> {
     return tokenData.access_token;
   }
 
-  // Otherwise, refresh token
+  // Otherwise, try env fallback then refresh token
+  const envToken = Deno.env.get('FYERS_ACCESS_TOKEN');
+  if (envToken) {
+    console.log('Using FYERS_ACCESS_TOKEN from environment');
+    return envToken;
+  }
+
   console.log('No valid cached token, refreshing...');
   return await refreshFyersToken();
 }
@@ -77,9 +83,9 @@ async function refreshFyersToken(): Promise<string> {
 
   console.log('Refreshing Fyers access token...');
 
-  const appIdHash = await sha256Hex(`${appId}${secretKey}`);
+  const appIdHash = await sha256Hex(`${appId}:${secretKey}`);
 
-  const response = await fetch('https://api-t1.fyers.in/api/v3/validate-refresh-token', {
+  const response = await fetch('https://api.fyers.in/api/v3/validate-refresh-token', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -139,17 +145,13 @@ async function fetchFYERSData(accessToken: string) {
 
   for (const item of symbols) {
     try {
-      // Fetch quote data from FYERS
       const appId = Deno.env.get('FYERS_APP_ID')!;
-      const response = await fetch(`https://api-t1.fyers.in/api/v3/quotes`, {
-        method: 'POST',
+      const url = `https://api-t1.fyers.in/data-rest/v2/quotes/?symbols=${encodeURIComponent(item.symbol)}`;
+      const response = await fetch(url, {
+        method: 'GET',
         headers: {
           'Authorization': `Bearer ${appId}:${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          symbols: item.symbol
-        })
+        }
       });
 
       if (!response.ok) {

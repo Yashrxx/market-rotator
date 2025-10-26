@@ -10,6 +10,16 @@ interface FyersTokenResponse {
   expires_in?: number;
 }
 
+// Helper to compute SHA-256 hex (required for FYERS appIdHash)
+async function sha256Hex(input: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  return hashHex;
+}
+
 async function refreshFyersToken(): Promise<string> {
   const appId = Deno.env.get('FYERS_APP_ID');
   const secretKey = Deno.env.get('FYERS_SECRET_KEY');
@@ -22,14 +32,15 @@ async function refreshFyersToken(): Promise<string> {
   console.log('Refreshing Fyers access token...');
 
   // Call Fyers API to refresh token
-  const response = await fetch('https://api-t1.fyers.in/api/v3/validate-refresh-token', {
+  const appIdHash = await sha256Hex(`${appId}:${secretKey}`);
+  const response = await fetch('https://api.fyers.in/api/v3/validate-refresh-token', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
       grant_type: 'refresh_token',
-      appIdHash: appId,
+      appIdHash,
       refresh_token: refreshToken,
       pin: secretKey,
     }),
