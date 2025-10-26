@@ -27,6 +27,16 @@ function calculateRSMetrics(price: number, change: number, benchmarkPrice: numbe
   };
 }
 
+// Helper to compute SHA-256 hex (required for FYERS appIdHash)
+async function sha256Hex(input: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  return hashHex;
+}
+
 async function getValidAccessToken(): Promise<string> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -67,14 +77,16 @@ async function refreshFyersToken(): Promise<string> {
 
   console.log('Refreshing Fyers access token...');
 
+  const appIdHash = await sha256Hex(`${appId}${secretKey}`);
+
   const response = await fetch('https://api-t1.fyers.in/api/v3/validate-refresh-token', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
       grant_type: 'refresh_token',
-      appIdHash: appId,
+      appIdHash,
       refresh_token: refreshToken,
       pin: secretKey,
     }),
@@ -128,10 +140,11 @@ async function fetchFYERSData(accessToken: string) {
   for (const item of symbols) {
     try {
       // Fetch quote data from FYERS
+      const appId = Deno.env.get('FYERS_APP_ID')!;
       const response = await fetch(`https://api-t1.fyers.in/api/v3/quotes`, {
         method: 'POST',
         headers: {
-          'Authorization': accessToken,
+          'Authorization': `Bearer ${appId}:${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
