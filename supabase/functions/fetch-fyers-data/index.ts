@@ -61,15 +61,20 @@ async function getValidAccessToken(): Promise<string> {
     return tokenData.access_token;
   }
 
-  // Otherwise, try env fallback then refresh token
-  const envToken = Deno.env.get('FYERS_ACCESS_TOKEN');
-  if (envToken) {
-    console.log('Using FYERS_ACCESS_TOKEN from environment');
-    return envToken;
+  // Otherwise, refresh token first
+  try {
+    console.log('No valid cached token, refreshing...');
+    const newToken = await refreshFyersToken();
+    return newToken;
+  } catch (e) {
+    console.error('Refresh failed, falling back to FYERS_ACCESS_TOKEN from environment if available:', e);
+    const envToken = Deno.env.get('FYERS_ACCESS_TOKEN');
+    if (envToken) {
+      console.log('Using FYERS_ACCESS_TOKEN from environment');
+      return envToken;
+    }
+    throw e;
   }
-
-  console.log('No valid cached token, refreshing...');
-  return await refreshFyersToken();
 }
 
 async function refreshFyersToken(): Promise<string> {
@@ -144,30 +149,51 @@ async function fetchFYERSData(accessToken: string) {
   const marketData = [];
 
   for (const item of symbols) {
-    try {
-      const appId = Deno.env.get('FYERS_APP_ID')!;
+    const appId = Deno.env.get('FYERS_APP_ID')!;
+    let token = accessToken;
+
+    const fetchOnce = async (tok: string): Promise<{ ok: boolean; payload?: any; status?: number; text?: string }> => {
       const url = `https://api-t1.fyers.in/data-rest/v2/quotes/?symbols=${encodeURIComponent(item.symbol)}`;
       const response = await fetch(url, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${appId}:${accessToken}`,
+          'Authorization': `Bearer ${appId}:${tok}`,
         }
       });
-
       if (!response.ok) {
-        console.error(`Failed to fetch data for ${item.symbol}:`, await response.text());
+        const text = await response.text().catch(() => '');
+        return { ok: false, status: response.status, text };
+      }
+      const json = await response.json();
+      return { ok: true, payload: json };
+    };
+
+    try {
+      // First attempt
+      let result = await fetchOnce(token);
+
+      // Unauthorized? try to refresh once and retry
+      if (!result.ok && (result.status === 401 || result.status === 403)) {
+        console.warn(`Unauthorized for ${item.symbol}. Refreshing token and retrying...`);
+        try {
+          token = await refreshFyersToken();
+          result = await fetchOnce(token);
+        } catch (e) {
+          console.error('Token refresh failed:', e);
+        }
+      }
+
+      if (!result.ok) {
+        console.error(`Failed to fetch data for ${item.symbol}: [status ${result.status}] ${result.text ?? ''}`);
         continue;
       }
 
-      const data = await response.json();
-      console.log(`FYERS response for ${item.symbol}:`, JSON.stringify(data));
-
-      // Extract data from FYERS response
+      const data = result.payload;
       const quoteData = data.d?.[0];
       if (quoteData && quoteData.v) {
         const price = quoteData.v.lp || 0;
         const change = quoteData.v.ch_per || 0;
-        
+
         const { rsRatio, rsMomentum } = calculateRSMetrics(price, change);
 
         marketData.push({
@@ -180,6 +206,8 @@ async function fetchFYERSData(accessToken: string) {
           rs_ratio: rsRatio,
           rs_momentum: rsMomentum,
         });
+      } else {
+        console.warn(`No quote payload for ${item.symbol}: ${JSON.stringify(data).slice(0, 500)}`);
       }
     } catch (error) {
       console.error(`Error fetching ${item.symbol}:`, error);
