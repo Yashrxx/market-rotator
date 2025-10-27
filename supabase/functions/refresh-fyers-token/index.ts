@@ -20,6 +20,13 @@ async function sha256Hex(input: string): Promise<string> {
   return hashHex;
 }
 
+function getFyersBase(): string {
+  const env = (Deno.env.get('FYERS_ENV') || '').toLowerCase();
+  return env === 't1' || env === 'sandbox' || env === 'test'
+    ? 'https://api-t1.fyers.in'
+    : 'https://api.fyers.in';
+}
+
 async function refreshFyersToken(): Promise<string> {
   const appId = Deno.env.get('FYERS_APP_ID');
   const secretKey = Deno.env.get('FYERS_SECRET_KEY');
@@ -33,7 +40,7 @@ async function refreshFyersToken(): Promise<string> {
 
   // Call Fyers API to refresh token
   const appIdHash = await sha256Hex(`${appId}:${secretKey}`);
-  const response = await fetch('https://api.fyers.in/api/v3/validate-refresh-token', {
+  const response = await fetch(`${getFyersBase()}/api/v3/validate-refresh-token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',

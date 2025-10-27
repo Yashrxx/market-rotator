@@ -37,6 +37,13 @@ async function sha256Hex(input: string): Promise<string> {
   return hashHex;
 }
 
+function getFyersBase(): string {
+  const env = (Deno.env.get('FYERS_ENV') || '').toLowerCase();
+  return env === 't1' || env === 'sandbox' || env === 'test'
+    ? 'https://api-t1.fyers.in'
+    : 'https://api.fyers.in';
+}
+
 async function getValidAccessToken(): Promise<string> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -90,7 +97,7 @@ async function refreshFyersToken(): Promise<string> {
 
   const appIdHash = await sha256Hex(`${appId}:${secretKey}`);
 
-  const response = await fetch('https://api.fyers.in/api/v3/validate-refresh-token', {
+  const response = await fetch(`${getFyersBase()}/api/v3/validate-refresh-token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -153,7 +160,7 @@ async function fetchFYERSData(accessToken: string) {
     let token = accessToken;
 
     const fetchOnce = async (tok: string): Promise<{ ok: boolean; payload?: any; status?: number; text?: string }> => {
-      const url = `https://api-t1.fyers.in/data-rest/v2/quotes/?symbols=${encodeURIComponent(item.symbol)}`;
+      const url = `${getFyersBase()}/data-rest/v2/quotes?symbols=${encodeURIComponent(item.symbol)}`;
       const response = await fetch(url, {
         method: 'GET',
         headers: {
