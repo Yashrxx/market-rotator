@@ -38,7 +38,8 @@ async function sha256Hex(input: string): Promise<string> {
 }
 
 function getFyersBase(): string {
-  const env = (Deno.env.get('FYERS_ENV') || '').toLowerCase();
+  // Default to live/production environment
+  const env = (Deno.env.get('FYERS_ENV') || 'live').toLowerCase();
   return env === 't1' || env === 'sandbox' || env === 'test'
     ? 'https://api-t1.fyers.in'
     : 'https://api.fyers.in';
@@ -97,7 +98,7 @@ async function refreshFyersToken(): Promise<string> {
 
   const appIdHash = await sha256Hex(`${appId}:${secretKey}`);
 
-  const response = await fetch(`${getFyersBase()}/api/v3/validate-refresh-token`, {
+  const response = await fetch(`${getFyersBase()}/api/v2/validate-refresh-token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -141,16 +142,16 @@ async function refreshFyersToken(): Promise<string> {
 }
 
 async function fetchFYERSData(accessToken: string) {
-  // Define symbols to fetch
+  // Define symbols to fetch - using verified live trading symbols
   const symbols = [
-    { symbol: "NSE:NIFTY50-INDEX", name: "Nifty 50", sector: "Index", industry: "Broad Market" },
-    { symbol: "NSE:NIFTYNXT50-INDEX", name: "Nifty Next 50", sector: "Index", industry: "Mid Cap" },
-    { symbol: "NSE:NIFTYBANK-INDEX", name: "Nifty Bank", sector: "Index", industry: "Banking" },
-    { symbol: "NSE:NIFTYIT-INDEX", name: "Nifty IT", sector: "Index", industry: "Technology" },
-    { symbol: "NSE:NIFTYAUTO-INDEX", name: "Nifty Auto", sector: "Index", industry: "Automobile" },
-    { symbol: "NSE:NIFTYPHARMA-INDEX", name: "Nifty Pharma", sector: "Index", industry: "Pharmaceutical" },
-    { symbol: "NSE:NIFTYFMCG-INDEX", name: "Nifty FMCG", sector: "Index", industry: "Consumer" },
-    { symbol: "NSE:NIFTYMETAL-INDEX", name: "Nifty Metal", sector: "Index", industry: "Metals" }
+    { symbol: "NSE:SBIN-EQ", name: "SBI", sector: "Banking", industry: "Public Sector Bank" },
+    { symbol: "NSE:RELIANCE-EQ", name: "Reliance", sector: "Energy", industry: "Oil & Gas" },
+    { symbol: "NSE:TCS-EQ", name: "TCS", sector: "Technology", industry: "IT Services" },
+    { symbol: "NSE:INFY-EQ", name: "Infosys", sector: "Technology", industry: "IT Services" },
+    { symbol: "NSE:HDFCBANK-EQ", name: "HDFC Bank", sector: "Banking", industry: "Private Bank" },
+    { symbol: "NSE:ICICIBANK-EQ", name: "ICICI Bank", sector: "Banking", industry: "Private Bank" },
+    { symbol: "NSE:WIPRO-EQ", name: "Wipro", sector: "Technology", industry: "IT Services" },
+    { symbol: "NSE:AXISBANK-EQ", name: "Axis Bank", sector: "Banking", industry: "Private Bank" }
   ];
 
   const marketData = [];
