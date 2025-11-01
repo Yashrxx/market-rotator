@@ -41,7 +41,7 @@ async function refreshFyersToken(): Promise<string> {
 
   // Call Fyers API to refresh token
   const appIdHash = await sha256Hex(`${appId}:${secretKey}`);
-  const response = await fetch(`${getFyersBase()}/api/v2/validate-refresh-token`, {
+  const response = await fetch(`${getFyersBase()}/api/v3/validate-refresh-token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
