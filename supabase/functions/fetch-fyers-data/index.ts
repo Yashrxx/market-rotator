@@ -98,7 +98,7 @@ async function refreshFyersToken(): Promise<string> {
 
   const appIdHash = await sha256Hex(`${appId}:${secretKey}`);
 
-  const response = await fetch(`${getFyersBase()}/api/v2/validate-refresh-token`, {
+  const response = await fetch(`${getFyersBase()}/api/v3/validate-refresh-token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -161,7 +161,7 @@ async function fetchFYERSData(accessToken: string) {
     let token = accessToken;
 
     const fetchOnce = async (tok: string): Promise<{ ok: boolean; payload?: any; status?: number; text?: string }> => {
-      const url = `${getFyersBase()}/data-rest/v2/quotes?symbols=${encodeURIComponent(item.symbol)}`;
+      const url = `${getFyersBase()}/data-rest/v3/quotes?symbols=${encodeURIComponent(item.symbol)}`;
       const response = await fetch(url, {
         method: 'GET',
         headers: {
