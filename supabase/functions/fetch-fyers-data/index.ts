@@ -1,9 +1,13 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from '@supabase/supabase-js';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+/* -------------------------------------------------------------------
+   FYERS TYPES + RS METRICS
+------------------------------------------------------------------- */
 
 interface FYERSQuoteData {
   symbol: string;
@@ -12,46 +16,47 @@ interface FYERSQuoteData {
   chp: number;
 }
 
-// Calculate RS-Ratio and RS-Momentum (simplified calculation for demo)
+// Simplified RS Metrics (for RRG-like visualization)
 function calculateRSMetrics(price: number, change: number, benchmarkPrice: number = 4536.89) {
-  // RS-Ratio: Relative performance vs benchmark (normalized to 100)
   const relativePerformance = (price / benchmarkPrice) * 100;
-  const rsRatio = relativePerformance + (Math.random() - 0.5) * 10; // Add some variance
-  
-  // RS-Momentum: Rate of change in RS-Ratio
+  const rsRatio = relativePerformance + (Math.random() - 0.5) * 10;
   const rsMomentum = 100 + change * 0.5 + (Math.random() - 0.5) * 5;
-  
+
   return {
     rsRatio: Math.max(85, Math.min(115, rsRatio)),
-    rsMomentum: Math.max(85, Math.min(115, rsMomentum))
+    rsMomentum: Math.max(85, Math.min(115, rsMomentum)),
   };
 }
 
-// Helper to compute SHA-256 hex (required for FYERS appIdHash)
+/* -------------------------------------------------------------------
+   CRYPTO + FYERS ENV HELPERS
+------------------------------------------------------------------- */
+
 async function sha256Hex(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-  return hashHex;
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 function getFyersBase(): string {
-  // Default to live/production environment
   const env = (Deno.env.get('FYERS_ENV') || 'live').toLowerCase();
   return env === 't1' || env === 'sandbox' || env === 'test'
     ? 'https://api-t1.fyers.in'
     : 'https://api.fyers.in';
 }
 
-async function getValidAccessToken(): Promise<string> {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
+/* -------------------------------------------------------------------
+   TOKEN HANDLING (Supabase)
+------------------------------------------------------------------- */
 
-  // Check if we have a valid token in database
-  const { data: tokenData, error } = await supabase
+async function getValidAccessToken(): Promise<string> {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+
+  const { data: tokenData } = await supabase
     .from('fyers_tokens')
     .select('*')
     .gt('expires_at', new Date().toISOString())
@@ -59,30 +64,14 @@ async function getValidAccessToken(): Promise<string> {
     .limit(1)
     .maybeSingle();
 
-  if (error) {
-    console.error('Error fetching token:', error);
-  }
-
-  // If we have a valid token, return it
   if (tokenData?.access_token) {
-    console.log('Using cached token, expires at:', tokenData.expires_at);
+    console.log('Using cached token until:', tokenData.expires_at);
     return tokenData.access_token;
   }
 
-  // Otherwise, refresh token first
-  try {
-    console.log('No valid cached token, refreshing...');
-    const newToken = await refreshFyersToken();
-    return newToken;
-  } catch (e) {
-    console.error('Refresh failed, falling back to FYERS_ACCESS_TOKEN from environment if available:', e);
-    const envToken = Deno.env.get('FYERS_ACCESS_TOKEN');
-    if (envToken) {
-      console.log('Using FYERS_ACCESS_TOKEN from environment');
-      return envToken;
-    }
-    throw e;
-  }
+  // Refresh token if none is valid
+  console.log('Cached token expired → refreshing…');
+  return await refreshFyersToken();
 }
 
 async function refreshFyersToken(): Promise<string> {
@@ -91,18 +80,16 @@ async function refreshFyersToken(): Promise<string> {
   const refreshToken = Deno.env.get('FYERS_REFRESH_TOKEN');
 
   if (!appId || !secretKey || !refreshToken) {
-    throw new Error('Missing Fyers credentials');
+    throw new Error('Missing FYERS credentials');
   }
 
-  console.log('Refreshing Fyers access token...');
+  console.log('Refreshing FYERS access token…');
 
   const appIdHash = await sha256Hex(`${appId}:${secretKey}`);
 
   const response = await fetch(`${getFyersBase()}/api/v3/validate-refresh-token`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-    },
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
     body: JSON.stringify({
       grant_type: 'refresh_token',
       appIdHash,
@@ -112,118 +99,89 @@ async function refreshFyersToken(): Promise<string> {
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Failed to refresh Fyers token:', errorText);
-    throw new Error(`Failed to refresh token: ${errorText}`);
+    throw new Error(await response.text());
   }
 
   const data = await response.json();
   const accessToken = data.access_token;
 
   if (!accessToken) {
-    throw new Error('No access token in response');
+    throw new Error('Token refresh failed: No access_token in response');
   }
 
-  // Store the new token
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
 
-  const expiresAt = new Date(Date.now() + 86400 * 1000); // 24 hours
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   await supabase.from('fyers_tokens').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
   await supabase.from('fyers_tokens').insert({
     access_token: accessToken,
-    expires_at: expiresAt.toISOString(),
+    expires_at: expiresAt,
   });
 
-  console.log('Token refreshed and stored successfully');
+  console.log('New FYERS token stored successfully.');
   return accessToken;
 }
 
-async function fetchFYERSData(accessToken: string) {
-  // Define symbols to fetch - using verified live trading symbols
-  const symbols = [
-    { symbol: "NSE:SBIN-EQ", name: "SBI", sector: "Banking", industry: "Public Sector Bank" },
-    { symbol: "NSE:RELIANCE-EQ", name: "Reliance", sector: "Energy", industry: "Oil & Gas" },
-    { symbol: "NSE:TCS-EQ", name: "TCS", sector: "Technology", industry: "IT Services" },
-    { symbol: "NSE:INFY-EQ", name: "Infosys", sector: "Technology", industry: "IT Services" },
-    { symbol: "NSE:HDFCBANK-EQ", name: "HDFC Bank", sector: "Banking", industry: "Private Bank" },
-    { symbol: "NSE:ICICIBANK-EQ", name: "ICICI Bank", sector: "Banking", industry: "Private Bank" },
-    { symbol: "NSE:WIPRO-EQ", name: "Wipro", sector: "Technology", industry: "IT Services" },
-    { symbol: "NSE:AXISBANK-EQ", name: "Axis Bank", sector: "Banking", industry: "Private Bank" }
-  ];
+/* -------------------------------------------------------------------
+   FETCH FYERS v3 QUOTE DATA
+------------------------------------------------------------------- */
 
-  const marketData = [];
+const symbols = [
+  { symbol: 'NSE:SBIN-EQ', name: 'SBI', sector: 'Banking', industry: 'PSU Bank' },
+  { symbol: 'NSE:RELIANCE-EQ', name: 'Reliance', sector: 'Energy', industry: 'Oil & Gas' },
+  { symbol: 'NSE:TCS-EQ', name: 'TCS', sector: 'IT', industry: 'Software' },
+  { symbol: 'NSE:INFY-EQ', name: 'Infosys', sector: 'IT', industry: 'Software' },
+  { symbol: 'NSE:HDFCBANK-EQ', name: 'HDFC Bank', sector: 'Banking', industry: 'Private Bank' },
+  { symbol: 'NSE:ICICIBANK-EQ', name: 'ICICI Bank', sector: 'Banking', industry: 'Private Bank' },
+];
+
+async function fetchFYERSData(accessToken: string) {
+  const appId = Deno.env.get('FYERS_APP_ID')!;
+  const results: any[] = [];
 
   for (const item of symbols) {
-    const appId = Deno.env.get('FYERS_APP_ID')!;
-    let token = accessToken;
-
-    const fetchOnce = async (tok: string): Promise<{ ok: boolean; payload?: any; status?: number; text?: string }> => {
+    try {
       const url = `${getFyersBase()}/data-rest/v3/quotes?symbols=${encodeURIComponent(item.symbol)}`;
+
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${appId}:${tok}`,
-        }
+        headers: { Authorization: `Bearer ${appId}:${accessToken}` },
       });
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        return { ok: false, status: response.status, text };
-      }
+
       const json = await response.json();
-      return { ok: true, payload: json };
-    };
+      const data = json.d?.[0];
 
-    try {
-      // First attempt
-      let result = await fetchOnce(token);
+      if (!data?.v) continue;
 
-      // Unauthorized? try to refresh once and retry
-      if (!result.ok && (result.status === 401 || result.status === 403)) {
-        console.warn(`Unauthorized for ${item.symbol}. Refreshing token and retrying...`);
-        try {
-          token = await refreshFyersToken();
-          result = await fetchOnce(token);
-        } catch (e) {
-          console.error('Token refresh failed:', e);
-        }
-      }
+      const price = data.v.lp ?? 0;
+      const change = data.v.chp ?? 0;
 
-      if (!result.ok) {
-        console.error(`Failed to fetch data for ${item.symbol}: [status ${result.status}] ${result.text ?? ''}`);
-        continue;
-      }
+      const rs = calculateRSMetrics(price, change);
 
-      const data = result.payload;
-      const quoteData = data.d?.[0];
-      if (quoteData && quoteData.v) {
-        const price = quoteData.v.lp || 0;
-        const change = quoteData.v.ch_per || 0;
-
-        const { rsRatio, rsMomentum } = calculateRSMetrics(price, change);
-
-        marketData.push({
-          symbol: item.symbol,
-          name: item.name,
-          sector: item.sector,
-          industry: item.industry,
-          price: price,
-          change: change,
-          rs_ratio: rsRatio,
-          rs_momentum: rsMomentum,
-        });
-      } else {
-        console.warn(`No quote payload for ${item.symbol}: ${JSON.stringify(data).slice(0, 500)}`);
-      }
-    } catch (error) {
-      console.error(`Error fetching ${item.symbol}:`, error);
+      results.push({
+        ...item,
+        price,
+        change,
+        rs_ratio: rs.rsRatio,
+        rs_momentum: rs.rsMomentum,
+        date: new Date().toISOString().split('T')[0],
+      });
+    } catch (err) {
+      console.error(`Failed fetching ${item.symbol}`, err);
     }
   }
 
-  return marketData;
+  return results;
 }
+
+/* -------------------------------------------------------------------
+   HTTP SERVER (DENO)
+------------------------------------------------------------------- */
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -231,53 +189,26 @@ Deno.serve(async (req) => {
   }
 
   try {
-    console.log('Fetching FYERS data with automatic token refresh...');
-
-    // Get valid access token (will auto-refresh if needed)
     const accessToken = await getValidAccessToken();
+    const data = await fetchFYERSData(accessToken);
 
-    const marketData = await fetchFYERSData(accessToken);
-
-    // Store data in Supabase
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    const { error: insertError } = await supabase
-      .from('market_data')
-      .insert(marketData);
-
-    if (insertError) {
-      console.error('Error inserting data:', insertError);
-      throw insertError;
-    }
-
-    console.log(`Successfully fetched and stored ${marketData.length} records`);
-
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        count: marketData.length,
-        message: 'Market data fetched and stored successfully'
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200 
-      }
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-  } catch (error) {
-    console.error('Error in fetch-fyers-data:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    return new Response(
-      JSON.stringify({ 
-        error: errorMessage,
-        details: 'Check function logs for more information'
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500 
-      }
-    );
+    await supabase.from('market_data').insert(data);
+
+    console.log(`Stored ${data.length} quotes in Supabase.`);
+
+    return new Response(JSON.stringify({ success: true, data }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (err: any) {
+    console.error('❌ ERROR:', err);
+    return new Response(JSON.stringify({ error: err.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500,
+    });
   }
 });
