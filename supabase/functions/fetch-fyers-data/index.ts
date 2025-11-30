@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -51,6 +51,9 @@ function getFyersBase(): string {
 ------------------------------------------------------------------- */
 
 async function getValidAccessToken(): Promise<string> {
+  // First, check if there's a direct access token in env (fallback)
+  const directToken = Deno.env.get('FYERS_ACCESS_TOKEN');
+  
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -69,9 +72,24 @@ async function getValidAccessToken(): Promise<string> {
     return tokenData.access_token;
   }
 
-  // Refresh token if none is valid
-  console.log('Cached token expired → refreshing…');
-  return await refreshFyersToken();
+  // Try to refresh token
+  console.log('No valid cached token, refreshing...');
+  console.log('Refreshing Fyers access token...');
+  
+  try {
+    return await refreshFyersToken();
+  } catch (err) {
+    console.error('Failed to refresh Fyers token:', err);
+    
+    // Fallback to direct access token if available
+    if (directToken) {
+      console.info('Refresh failed, falling back to FYERS_ACCESS_TOKEN from environment if available:', err);
+      console.info('Using FYERS_ACCESS_TOKEN from environment');
+      return directToken;
+    }
+    
+    throw err;
+  }
 }
 
 async function refreshFyersToken(): Promise<string> {
@@ -87,9 +105,19 @@ async function refreshFyersToken(): Promise<string> {
 
   const appIdHash = await sha256Hex(`${appId}:${secretKey}`);
 
+  // Try with additional headers to bypass potential WAF/blocking
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': 'application/json',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Origin': 'https://fyers.in',
+    'Referer': 'https://fyers.in/',
+  };
+
   const response = await fetch(`${getFyersBase()}/api/v3/validate-refresh-token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    headers,
     body: JSON.stringify({
       grant_type: 'refresh_token',
       appIdHash,
@@ -99,7 +127,9 @@ async function refreshFyersToken(): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    const errorText = await response.text();
+    console.error(`Failed to refresh token: [status ${response.status}] ${errorText}`);
+    throw new Error(`Failed to refresh token: ${errorText}`);
   }
 
   const data = await response.json();
@@ -144,19 +174,38 @@ async function fetchFYERSData(accessToken: string) {
   const appId = Deno.env.get('FYERS_APP_ID')!;
   const results: any[] = [];
 
+  // Add headers that might help bypass WAF/blocking
+  const commonHeaders = {
+    'Authorization': `${appId}:${accessToken}`,
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': 'application/json',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Origin': 'https://fyers.in',
+    'Referer': 'https://fyers.in/',
+  };
+
   for (const item of symbols) {
     try {
       const url = `${getFyersBase()}/data-rest/v3/quotes?symbols=${encodeURIComponent(item.symbol)}`;
 
       const response = await fetch(url, {
         method: 'GET',
-        headers: { Authorization: `Bearer ${appId}:${accessToken}` },
+        headers: commonHeaders,
       });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Failed to fetch data for ${item.symbol}: [status ${response.status}] ${errorText}`);
+        continue;
+      }
 
       const json = await response.json();
       const data = json.d?.[0];
 
-      if (!data?.v) continue;
+      if (!data?.v) {
+        console.warn(`No data returned for ${item.symbol}`);
+        continue;
+      }
 
       const price = data.v.lp ?? 0;
       const change = data.v.chp ?? 0;
@@ -172,7 +221,7 @@ async function fetchFYERSData(accessToken: string) {
         date: new Date().toISOString().split('T')[0],
       });
     } catch (err) {
-      console.error(`Failed fetching ${item.symbol}`, err);
+      console.error(`Failed fetching ${item.symbol}:`, err);
     }
   }
 
@@ -189,24 +238,43 @@ Deno.serve(async (req) => {
   }
 
   try {
+    console.info('Fetching FYERS data with automatic token refresh...');
     const accessToken = await getValidAccessToken();
     const data = await fetchFYERSData(accessToken);
+
+    console.info(`Successfully fetched and stored ${data.length} records`);
+
+    if (data.length === 0) {
+      console.warn('No market data was fetched. This may indicate an API issue or incorrect credentials.');
+    }
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    await supabase.from('market_data').insert(data);
+    if (data.length > 0) {
+      const { error: insertError } = await supabase.from('market_data').insert(data);
+      if (insertError) {
+        console.error('Failed to insert data into Supabase:', insertError);
+        throw new Error(`Database insert failed: ${insertError.message}`);
+      }
+      console.log(`Successfully stored ${data.length} quotes in Supabase.`);
+    }
 
-    console.log(`Stored ${data.length} quotes in Supabase.`);
-
-    return new Response(JSON.stringify({ success: true, data }), {
+    return new Response(JSON.stringify({ 
+      success: true, 
+      data,
+      message: data.length === 0 ? 'No data fetched - API may be unavailable' : `Fetched ${data.length} records`
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err: any) {
     console.error('❌ ERROR:', err);
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ 
+      error: err.message,
+      details: 'FYERS API may be blocking requests. Try generating a new access token or check FYERS service status.'
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     });
