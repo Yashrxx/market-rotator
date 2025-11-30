@@ -42,6 +42,39 @@ const Index = () => {
     fetchMarketData();
   }, []);
 
+  // Set up realtime subscription for automatic updates
+  useEffect(() => {
+    console.log('Setting up realtime subscription...');
+    
+    const channel = supabase
+      .channel('market-data-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'market_data'
+        },
+        (payload) => {
+          console.log('New market data received:', payload);
+          toast.info('New market data available! Refreshing...');
+          // Fetch the latest data when new records are inserted
+          fetchMarketData();
+        }
+      )
+      .subscribe((status) => {
+        console.log('Realtime subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          toast.success('Live updates enabled!');
+        }
+      });
+
+    return () => {
+      console.log('Cleaning up realtime subscription');
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const fetchMarketData = async () => {
     try {
       const { data: marketData, error } = await supabase.functions.invoke('get-market-data');
@@ -138,7 +171,7 @@ const Index = () => {
 
       <footer className="border-t border-border bg-card py-3 px-6">
         <p className="text-xs text-muted-foreground text-center">
-          Data updates: {timeline} | Backend integration ready for live data feeds
+          Data updates: {timeline} | ✓ Auto-refresh enabled (updates every 5 minutes)
         </p>
       </footer>
     </div>
