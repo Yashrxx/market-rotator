@@ -15,10 +15,39 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get the latest data for each symbol
+    // Parse request body for timeframe
+    let timeframe = 'weekly';
+    try {
+      const body = await req.json();
+      if (body?.timeframe) {
+        timeframe = body.timeframe.toLowerCase();
+      }
+    } catch {
+      // No body or invalid JSON, use default
+    }
+
+    // Calculate date range based on timeframe
+    const now = new Date();
+    let startDate: Date;
+    
+    switch (timeframe) {
+      case 'daily':
+        startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); // Last 24 hours
+        break;
+      case 'monthly':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // Last 30 days
+        break;
+      case 'weekly':
+      default:
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // Last 7 days
+        break;
+    }
+
+    // Get the latest data for each symbol within timeframe
     const { data: latestData, error } = await supabase
       .from('market_data')
       .select('*')
+      .gte('fetched_at', startDate.toISOString())
       .order('fetched_at', { ascending: false });
 
     if (error) {
@@ -46,7 +75,7 @@ Deno.serve(async (req) => {
       visible: true
     }));
 
-    console.log(`Returning ${result.length} market data records`);
+    console.log(`Returning ${result.length} market data records for ${timeframe} timeframe`);
 
     return new Response(
       JSON.stringify(result),

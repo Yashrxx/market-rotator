@@ -37,15 +37,13 @@ const Index = () => {
   const [tailLength, setTailLength] = useState(10);
   const chartRef = useRef<RRGChartRef>(null);
 
-  // Fetch initial data on component mount
+  // Fetch data when timeline changes
   useEffect(() => {
-    fetchMarketData();
-  }, []);
+    fetchMarketData(timeline, false);
+  }, [timeline]);
 
-  // Set up realtime subscription for automatic updates
+  // Set up realtime subscription for automatic updates (silent)
   useEffect(() => {
-    console.log('Setting up realtime subscription...');
-    
     const channel = supabase
       .channel('market-data-changes')
       .on(
@@ -55,71 +53,70 @@ const Index = () => {
           schema: 'public',
           table: 'market_data'
         },
-        (payload) => {
-          console.log('New market data received:', payload);
-          toast.info('New market data available! Refreshing...');
-          // Fetch the latest data when new records are inserted
-          fetchMarketData();
+        () => {
+          // Silently refresh data without toast spam
+          fetchMarketData(timeline, true);
         }
       )
-      .subscribe((status) => {
-        console.log('Realtime subscription status:', status);
-        if (status === 'SUBSCRIBED') {
-          toast.success('Live updates enabled!');
-        }
-      });
+      .subscribe();
 
     return () => {
-      console.log('Cleaning up realtime subscription');
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [timeline]);
 
-  const fetchMarketData = async () => {
+  const fetchMarketData = async (timeframe: string, silent: boolean = false) => {
     try {
-      const { data: marketData, error } = await supabase.functions.invoke('get-market-data');
+      const { data: marketData, error } = await supabase.functions.invoke('get-market-data', {
+        body: { timeframe: timeframe.toLowerCase() }
+      });
       
       if (error) {
         console.error('Error fetching market data:', error);
-        toast.error("Failed to fetch market data. Using placeholder data.");
+        if (!silent) toast.error("Failed to fetch market data");
         return;
       }
 
       if (marketData && Array.isArray(marketData) && marketData.length > 0) {
-        setData(marketData);
-        toast.success("Market data loaded successfully!");
-      } else {
-        toast.info("No market data available. Using placeholder data.");
+        // Preserve visibility state when updating
+        setData(prev => {
+          const visibilityMap = new Map(prev.map(item => [item.symbol, item.visible]));
+          return marketData.map((item: StockData) => ({
+            ...item,
+            visible: visibilityMap.get(item.symbol) ?? true
+          }));
+        });
+        if (!silent) toast.success("Market data updated");
       }
     } catch (error) {
       console.error('Error fetching market data:', error);
-      toast.error("Failed to fetch market data. Using placeholder data.");
+      if (!silent) toast.error("Failed to fetch market data");
     }
   };
 
   const handleFetchData = async () => {
     setIsLoading(true);
-    toast.info("Fetching latest market data from FYERS...");
     
     try {
-      // Trigger the fetch-fyers-data function to get fresh data
-      const { error: fetchError } = await supabase.functions.invoke('fetch-fyers-data');
+      const { error: fetchError } = await supabase.functions.invoke('fetch-fyers-data', {
+        body: { timeframe: timeline.toLowerCase() }
+      });
       
       if (fetchError) {
         console.error('Error triggering data fetch:', fetchError);
-        toast.error("Failed to fetch fresh data from FYERS.");
+        toast.error("Failed to fetch data");
         setIsLoading(false);
         return;
       }
 
-      // Wait a moment for the data to be stored, then fetch the updated data
+      // Wait for data to be stored, then fetch
       setTimeout(async () => {
-        await fetchMarketData();
+        await fetchMarketData(timeline, false);
         setIsLoading(false);
       }, 2000);
     } catch (error) {
       console.error('Error in handleFetchData:', error);
-      toast.error("An error occurred while fetching data.");
+      toast.error("Failed to fetch data");
       setIsLoading(false);
     }
   };
