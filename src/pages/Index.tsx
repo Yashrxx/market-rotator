@@ -171,7 +171,7 @@ const Index = () => {
 
       <footer className="border-t border-border bg-card py-3 px-6">
         <p className="text-xs text-muted-foreground text-center">
-          Data updates: {timeline} | ✓ Auto-refresh enabled (updates every 5 minutes)
+          Simulated Market Data | {timeline} | ✓ Auto-refresh enabled (every 5 min)
         </p>
       </footer>
     </div>
