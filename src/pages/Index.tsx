@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { ControlBar } from "@/components/ControlBar";
 import { RRGChartZoomable, RRGChartRef } from "@/components/RRGChartZoomable";
+import { TimelineSlider } from "@/components/TimelineSlider";
 import { StockTable } from "@/components/StockTable";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -53,10 +54,17 @@ const Index = () => {
   const [data, setData] = useState<StockData[]>(initialData);
   const [history, setHistory] = useState<HistoryMap>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [tailLength, setTailLength] = useState(10);
+  const [tailLength, setTailLength] = useState(7);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<"placeholder" | "live">("placeholder");
+  const [weekOffset, setWeekOffset] = useState(0);
   const chartRef = useRef<RRGChartRef>(null);
+
+  // Compute total weeks available from history
+  const totalWeeks = useMemo(() => {
+    const lengths = Object.values(history).map(h => h.length);
+    return lengths.length > 0 ? Math.max(...lengths, tailLength) : tailLength;
+  }, [history, tailLength]);
 
   const fetchMarketData = useCallback(async (showToast = true) => {
     try {
@@ -234,10 +242,28 @@ const Index = () => {
         onCenterGraph={handleCenterGraph}
       />
 
-      <main className="flex-1 p-6 space-y-6">
+      <main className="flex-1 px-6 py-4 space-y-4">
+        {/* Timeline slider */}
+        <div className="w-full max-w-[1200px] mx-auto">
+          <TimelineSlider
+            totalWeeks={totalWeeks}
+            windowSize={tailLength}
+            endWeek={weekOffset}
+            onWindowChange={setWeekOffset}
+            endDateLabel={lastUpdated ? `${lastUpdated}` : undefined}
+          />
+        </div>
+
+        {/* RRG Chart */}
         <div className="w-full flex justify-center">
-          <div className="w-full max-w-[1200px] h-[700px] relative">
-            <RRGChartZoomable ref={chartRef} data={data} tailLength={tailLength} history={history} />
+          <div className="w-full max-w-[1200px] h-[660px] relative">
+            <RRGChartZoomable
+              ref={chartRef}
+              data={data}
+              tailLength={tailLength}
+              history={history}
+              weekOffset={weekOffset}
+            />
           </div>
         </div>
 

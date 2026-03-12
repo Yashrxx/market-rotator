@@ -56,15 +56,15 @@ export const ControlBar = ({
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Tail Length:</span>
+            <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Trail (weeks):</span>
             <Slider
               value={[tailLength]}
               onValueChange={(values) => {
                 onTailLengthChange(values[0]);
                 setInputValue(values[0].toString());
               }}
-              min={3}
-              max={20}
+              min={2}
+              max={30}
               step={1}
               className="w-32"
             />
@@ -74,20 +74,20 @@ export const ControlBar = ({
               onChange={(e) => {
                 setInputValue(e.target.value);
                 const val = parseInt(e.target.value);
-                if (!isNaN(val) && val >= 3 && val <= 20) {
+                if (!isNaN(val) && val >= 2 && val <= 30) {
                   onTailLengthChange(val);
                 }
               }}
               onBlur={() => {
                 const val = parseInt(inputValue);
-                if (isNaN(val) || val < 3 || val > 20) {
+                if (isNaN(val) || val < 2 || val > 30) {
                   setInputValue(tailLength.toString());
                 } else {
                   onTailLengthChange(val);
                 }
               }}
-              min={3}
-              max={20}
+              min={2}
+              max={30}
               className="w-14 h-9 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
           </div>
