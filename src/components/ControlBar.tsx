@@ -122,7 +122,7 @@ export const ControlBar = ({
             className="gap-2"
           >
             <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-            {isLoading ? "Fetching..." : "Fetch Data"}
+            {isLoading ? "Fetching from Fyers..." : "Fetch Live Data"}
           </Button>
         </div>
       </div>

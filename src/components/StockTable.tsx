@@ -27,7 +27,7 @@ interface StockTableProps {
   onVisibilityToggle: (symbol: string) => void;
 }
 
-type SortField = "symbol" | "name" | "change";
+type SortField = "symbol" | "name" | "change" | "price" | "sector" | "RS-Ratio" | "RS-Momentum";
 type SortDirection = "asc" | "desc";
 
 export const StockTable = ({ data, onVisibilityToggle }: StockTableProps) => {
@@ -45,10 +45,11 @@ export const StockTable = ({ data, onVisibilityToggle }: StockTableProps) => {
 
   const sortedData = [...data].sort((a, b) => {
     const multiplier = sortDirection === "asc" ? 1 : -1;
-    if (sortField === "change") {
-      return (a.change - b.change) * multiplier;
+    const numericFields: SortField[] = ["change", "price", "RS-Ratio", "RS-Momentum"];
+    if (numericFields.includes(sortField)) {
+      return ((a[sortField] as number) - (b[sortField] as number)) * multiplier;
     }
-    return a[sortField].localeCompare(b[sortField]) * multiplier;
+    return String(a[sortField]).localeCompare(String(b[sortField])) * multiplier;
   });
 
   const getRowColor = (index: number) => {
@@ -86,15 +87,49 @@ export const StockTable = ({ data, onVisibilityToggle }: StockTableProps) => {
                 <ArrowUpDown className="h-4 w-4" />
               </div>
             </TableHead>
-            <TableHead>Sector</TableHead>
+            <TableHead
+              className="cursor-pointer select-none"
+              onClick={() => handleSort("sector")}
+            >
+              <div className="flex items-center gap-2">
+                Sector
+                <ArrowUpDown className="h-4 w-4" />
+              </div>
+            </TableHead>
             <TableHead>Industry</TableHead>
-            <TableHead className="text-right">Price</TableHead>
+            <TableHead
+              className="text-right cursor-pointer select-none"
+              onClick={() => handleSort("price")}
+            >
+              <div className="flex items-center justify-end gap-2">
+                Price
+                <ArrowUpDown className="h-4 w-4" />
+              </div>
+            </TableHead>
             <TableHead 
               className="text-right cursor-pointer select-none"
               onClick={() => handleSort("change")}
             >
               <div className="flex items-center justify-end gap-2">
                 % Change
+                <ArrowUpDown className="h-4 w-4" />
+              </div>
+            </TableHead>
+            <TableHead
+              className="text-right cursor-pointer select-none"
+              onClick={() => handleSort("RS-Ratio")}
+            >
+              <div className="flex items-center justify-end gap-2">
+                RS-Ratio
+                <ArrowUpDown className="h-4 w-4" />
+              </div>
+            </TableHead>
+            <TableHead
+              className="text-right cursor-pointer select-none"
+              onClick={() => handleSort("RS-Momentum")}
+            >
+              <div className="flex items-center justify-end gap-2">
+                RS-Momentum
                 <ArrowUpDown className="h-4 w-4" />
               </div>
             </TableHead>
@@ -126,12 +161,14 @@ export const StockTable = ({ data, onVisibilityToggle }: StockTableProps) => {
               <TableCell>{stock.name}</TableCell>
               <TableCell className="text-muted-foreground">{stock.sector}</TableCell>
               <TableCell className="text-muted-foreground">{stock.industry}</TableCell>
-              <TableCell className="text-right">${stock.price.toFixed(2)}</TableCell>
+              <TableCell className="text-right">₹{stock.price.toFixed(2)}</TableCell>
               <TableCell className={`text-right font-medium ${
                 stock.change >= 0 ? "text-quadrant-leading" : "text-quadrant-lagging"
               }`}>
                 {stock.change >= 0 ? "+" : ""}{stock.change.toFixed(2)}%
               </TableCell>
+              <TableCell className="text-right font-mono text-sm">{stock["RS-Ratio"].toFixed(2)}</TableCell>
+              <TableCell className="text-right font-mono text-sm">{stock["RS-Momentum"].toFixed(2)}</TableCell>
             </TableRow>
           ))}
         </TableBody>

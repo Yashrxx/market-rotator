@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { ControlBar } from "@/components/ControlBar";
 import { RRGChartZoomable, RRGChartRef } from "@/components/RRGChartZoomable";
 import { StockTable } from "@/components/StockTable";
@@ -17,112 +17,190 @@ interface StockData {
   visible: boolean;
 }
 
-// Placeholder data structure with extended information
+interface HistoryPoint {
+  "RS-Ratio": number;
+  "RS-Momentum": number;
+  fetched_at: string;
+}
+
+// History map: symbol → array of historical RS points (oldest first)
+type HistoryMap = Record<string, HistoryPoint[]>;
+
+// Indian NSE stock placeholders – spread across all 4 quadrants
 const initialData: StockData[] = [
-  { symbol: "$INDU", name: "Dow Jones", sector: "Index", industry: "Broad Market", price: 35420.50, change: 0.45, "RS-Ratio": 97.5, "RS-Momentum": 100.8, visible: true },
-  { symbol: "$COMPQ", name: "NASDAQ", sector: "Index", industry: "Technology", price: 14138.23, change: 1.23, "RS-Ratio": 102.3, "RS-Momentum": 100.2, visible: true },
-  { symbol: "$CDNX", name: "TSX Venture", sector: "Index", industry: "Small Cap", price: 892.45, change: 2.15, "RS-Ratio": 108.5, "RS-Momentum": 102.1, visible: true },
-  { symbol: "$XAU", name: "Gold/Silver", sector: "Commodity", industry: "Precious Metals", price: 124.32, change: -0.87, "RS-Ratio": 95.2, "RS-Momentum": 98.5, visible: true },
-  { symbol: "$HUI", name: "Gold Bugs", sector: "Commodity", industry: "Mining", price: 256.78, change: -1.24, "RS-Ratio": 93.8, "RS-Momentum": 96.2, visible: true },
-  { symbol: "$SPX", name: "S&P 500", sector: "Index", industry: "Broad Market", price: 4536.89, change: 0.67, "RS-Ratio": 100.0, "RS-Momentum": 100.0, visible: true },
-  { symbol: "$NDX", name: "NASDAQ 100", sector: "Index", industry: "Large Cap Tech", price: 15423.12, change: 1.45, "RS-Ratio": 104.2, "RS-Momentum": 101.5, visible: true },
-  { symbol: "$RUT", name: "Russell 2000", sector: "Index", industry: "Small Cap", price: 1987.65, change: -0.34, "RS-Ratio": 98.7, "RS-Momentum": 99.3, visible: true },
+  { symbol: "SBIN",       name: "SBI",           sector: "Banking",    industry: "PSU Bank",        price: 850,   change:  0.45, "RS-Ratio": 99.2,  "RS-Momentum": 100.8, visible: true },
+  { symbol: "RELIANCE",   name: "Reliance",      sector: "Energy",     industry: "Oil & Gas",       price: 1290,  change: -0.32, "RS-Ratio": 101.8, "RS-Momentum": 99.4,  visible: true },
+  { symbol: "TCS",        name: "TCS",           sector: "IT",         industry: "Software",        price: 4100,  change:  1.10, "RS-Ratio": 103.5, "RS-Momentum": 101.6, visible: true },
+  { symbol: "INFY",       name: "Infosys",       sector: "IT",         industry: "Software",        price: 1890,  change:  0.85, "RS-Ratio": 102.4, "RS-Momentum": 101.2, visible: true },
+  { symbol: "HDFCBANK",   name: "HDFC Bank",     sector: "Banking",    industry: "Private Bank",    price: 1780,  change:  0.22, "RS-Ratio": 100.6, "RS-Momentum": 100.3, visible: true },
+  { symbol: "ICICIBANK",  name: "ICICI Bank",    sector: "Banking",    industry: "Private Bank",    price: 1340,  change: -0.15, "RS-Ratio": 100.2, "RS-Momentum": 99.5,  visible: true },
+  { symbol: "ITC",        name: "ITC",           sector: "Consumer",   industry: "FMCG",            price: 460,   change:  0.67, "RS-Ratio": 98.2,  "RS-Momentum": 101.1, visible: true },
+  { symbol: "BHARTIARTL", name: "Bharti Airtel", sector: "Telecom",    industry: "Telecom",         price: 1640,  change:  1.45, "RS-Ratio": 104.2, "RS-Momentum": 102.0, visible: true },
+  { symbol: "KOTAKBANK",  name: "Kotak Bank",    sector: "Banking",    industry: "Private Bank",    price: 1800,  change: -0.55, "RS-Ratio": 99.4,  "RS-Momentum": 98.6,  visible: true },
+  { symbol: "LT",         name: "L&T",           sector: "Industrial", industry: "Construction",    price: 3550,  change:  0.30, "RS-Ratio": 101.0, "RS-Momentum": 100.5, visible: true },
+  { symbol: "AXISBANK",   name: "Axis Bank",     sector: "Banking",    industry: "Private Bank",    price: 1180,  change: -0.78, "RS-Ratio": 97.5,  "RS-Momentum": 98.2,  visible: true },
+  { symbol: "WIPRO",      name: "Wipro",         sector: "IT",         industry: "Software",        price: 560,   change:  0.92, "RS-Ratio": 96.8,  "RS-Momentum": 101.3, visible: true },
+  { symbol: "MARUTI",     name: "Maruti Suzuki", sector: "Auto",       industry: "Automobile",      price: 11200, change:  0.18, "RS-Ratio": 105.4, "RS-Momentum": 100.8, visible: true },
+  { symbol: "TATAMOTORS", name: "Tata Motors",   sector: "Auto",       industry: "Automobile",      price: 850,   change: -1.24, "RS-Ratio": 95.5,  "RS-Momentum": 97.8,  visible: true },
+  { symbol: "SUNPHARMA",  name: "Sun Pharma",    sector: "Pharma",     industry: "Pharmaceuticals", price: 1820,  change:  0.56, "RS-Ratio": 103.0, "RS-Momentum": 100.2, visible: true },
 ];
+
+const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 const Index = () => {
   const [timeline, setTimeline] = useState("Weekly");
-  const [benchmark, setBenchmark] = useState("$SPX");
+  const [benchmark] = useState("NIFTY 50");
   const [data, setData] = useState<StockData[]>(initialData);
+  const [history, setHistory] = useState<HistoryMap>({});
   const [isLoading, setIsLoading] = useState(false);
   const [tailLength, setTailLength] = useState(10);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<"placeholder" | "live">("placeholder");
   const chartRef = useRef<RRGChartRef>(null);
 
-  // Fetch data when timeline changes
-  useEffect(() => {
-    fetchMarketData(timeline, false);
-  }, [timeline]);
+  const fetchMarketData = useCallback(async (showToast = true) => {
+    try {
+      const { data: response, error } = await supabase.functions.invoke('get-market-data', {
+        body: null,
+        headers: {},
+      });
 
-  // Set up realtime subscription for automatic updates (silent)
+      if (error) {
+        console.error('Error fetching market data:', error);
+        if (showToast) toast.error("Failed to fetch market data. Using placeholder data.");
+        return;
+      }
+
+      // Handle new { stocks, history } shape or legacy flat array
+      let marketStocks: any[] = [];
+      let marketHistory: HistoryMap = {};
+
+      if (response && typeof response === 'object' && !Array.isArray(response)) {
+        marketStocks = response.stocks || [];
+        marketHistory = response.history || {};
+      } else if (Array.isArray(response)) {
+        marketStocks = response;
+      }
+
+      if (marketStocks.length > 0) {
+        const visibilityMap = new Map(data.map(d => [d.symbol, d.visible]));
+        const enriched = marketStocks.map((item: StockData) => ({
+          ...item,
+          visible: visibilityMap.get(item.symbol) ?? true,
+        }));
+        setData(enriched);
+        setHistory(marketHistory);
+        setDataSource("live");
+        setLastUpdated(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+        if (showToast) toast.success(`Loaded ${enriched.length} stocks from Fyers`);
+      } else {
+        if (showToast) toast.info("No market data available yet. Using placeholders.");
+      }
+    } catch (error) {
+      console.error('Error fetching market data:', error);
+      if (showToast) toast.error("Failed to fetch market data.");
+    }
+  }, [data]);
+
+  // Fetch initial data on mount
+  useEffect(() => {
+    fetchMarketData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-refresh every 5 minutes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log('Auto-refreshing market data...');
+      fetchMarketData(false);
+    }, AUTO_REFRESH_INTERVAL);
+
+    return () => clearInterval(interval);
+  }, [fetchMarketData]);
+
+  // Realtime subscription for push updates
   useEffect(() => {
     const channel = supabase
       .channel('market-data-changes')
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'market_data'
-        },
+        { event: 'INSERT', schema: 'public', table: 'market_data' },
         () => {
-          // Silently refresh data without toast spam
-          fetchMarketData(timeline, true);
+          console.log('New market data inserted, refreshing...');
+          fetchMarketData(false);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Realtime subscription active');
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [timeline]);
-
-  const fetchMarketData = async (timeframe: string, silent: boolean = false) => {
-    try {
-      const { data: marketData, error } = await supabase.functions.invoke('get-market-data', {
-        body: { timeframe: timeframe.toLowerCase() }
-      });
-      
-      if (error) {
-        console.error('Error fetching market data:', error);
-        if (!silent) toast.error("Failed to fetch market data");
-        return;
-      }
-
-      if (marketData && Array.isArray(marketData) && marketData.length > 0) {
-        // Preserve visibility state when updating
-        setData(prev => {
-          const visibilityMap = new Map(prev.map(item => [item.symbol, item.visible]));
-          return marketData.map((item: StockData) => ({
-            ...item,
-            visible: visibilityMap.get(item.symbol) ?? true
-          }));
-        });
-        if (!silent) toast.success("Market data updated");
-      }
-    } catch (error) {
-      console.error('Error fetching market data:', error);
-      if (!silent) toast.error("Failed to fetch market data");
-    }
-  };
+  }, [fetchMarketData]);
 
   const handleFetchData = async () => {
     setIsLoading(true);
-    
+    toast.info("Fetching live data from Fyers API...");
+
     try {
-      const { error: fetchError } = await supabase.functions.invoke('fetch-fyers-data', {
-        body: { timeframe: timeline.toLowerCase() }
-      });
-      
+      const { data: result, error: fetchError } = await supabase.functions.invoke('fetch-fyers-data');
+
       if (fetchError) {
-        console.error('Error triggering data fetch:', fetchError);
-        toast.error("Failed to fetch data");
+        console.error('Error triggering Fyers fetch:', fetchError);
+        toast.error("Failed to fetch from Fyers. Check API credentials.");
         setIsLoading(false);
         return;
       }
 
-      // Wait for data to be stored, then fetch
-      setTimeout(async () => {
-        await fetchMarketData(timeline, false);
-        setIsLoading(false);
-      }, 2000);
+      // If the edge function returned data directly, use it
+      if (result?.data && Array.isArray(result.data) && result.data.length > 0) {
+        const visibilityMap = new Map(data.map(d => [d.symbol, d.visible]));
+        const enriched = result.data.map((item: any) => ({
+          symbol: item.symbol,
+          name: item.name,
+          sector: item.sector,
+          industry: item.industry,
+          price: item.price,
+          change: item.change,
+          "RS-Ratio": item.rs_ratio,
+          "RS-Momentum": item.rs_momentum,
+          visible: visibilityMap.get(item.symbol) ?? true,
+        }));
+        setData(enriched);
+
+        // Append the new point to existing history for each symbol
+        setHistory(prev => {
+          const updated = { ...prev };
+          for (const item of result.data) {
+            const sym = item.symbol;
+            const point = { "RS-Ratio": item.rs_ratio, "RS-Momentum": item.rs_momentum, fetched_at: new Date().toISOString() };
+            if (!updated[sym]) updated[sym] = [];
+            updated[sym] = [...updated[sym], point].slice(-tailLength);
+          }
+          return updated;
+        });
+
+        setDataSource("live");
+        setLastUpdated(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+        toast.success(`${enriched.length} live quotes loaded from Fyers`);
+      } else {
+        // Fallback: fetch from DB after a short delay
+        await new Promise((r) => setTimeout(r, 2000));
+        await fetchMarketData();
+      }
     } catch (error) {
       console.error('Error in handleFetchData:', error);
-      toast.error("Failed to fetch data");
+      toast.error("An error occurred while fetching data.");
+    } finally {
       setIsLoading(false);
     }
   };
 
   const handleVisibilityToggle = (symbol: string) => {
-    setData(prev => prev.map(item => 
+    setData(prev => prev.map(item =>
       item.symbol === symbol ? { ...item, visible: !item.visible } : item
     ));
   };
@@ -140,7 +218,7 @@ const Index = () => {
             Relative Rotation Graph
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Visualize relative strength and momentum across market indices
+            NSE stocks vs {benchmark} — Powered by Fyers API
           </p>
         </div>
       </header>
@@ -159,7 +237,7 @@ const Index = () => {
       <main className="flex-1 p-6 space-y-6">
         <div className="w-full flex justify-center">
           <div className="w-full max-w-[1200px] h-[700px] relative">
-            <RRGChartZoomable ref={chartRef} data={data} tailLength={tailLength} />
+            <RRGChartZoomable ref={chartRef} data={data} tailLength={tailLength} history={history} />
           </div>
         </div>
 
@@ -168,7 +246,8 @@ const Index = () => {
 
       <footer className="border-t border-border bg-card py-3 px-6">
         <p className="text-xs text-muted-foreground text-center">
-          Simulated Market Data | {timeline} | ✓ Auto-refresh enabled (every 5 min)
+          {dataSource === "live" ? "🟢 Fyers Live Data" : "⚪ Placeholder Data"} | Benchmark: {benchmark} | {timeline}
+          {lastUpdated && ` | Last updated: ${lastUpdated}`} | Auto-refresh every 5 min
         </p>
       </footer>
     </div>
